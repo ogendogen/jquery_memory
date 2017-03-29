@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<head>
+	<meta charset='UTF-8'/>
+	<script src="https://code.jquery.com/jquery-3.1.1.min.js" integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8=" crossorigin="anonymous"></script>
+	<script src="http://code.jquery.com/ui/1.12.1/jquery-ui.min.js" integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script>
+	<script src="jquery.flip.min.js"></script>
+	<!-- Latest compiled and minified JavaScript -->
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+	<link rel="stylesheet" type="text/css" href="style.css">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jQuery-Flip/1.1.2/jquery.flip.min.js"></script>
+	<title>Memory Game</title>
+</head>
+<body>
+	<div class=container>
+		<!-- Pole do gry -->
+	</div>
+	
+	<div class=panel style="border: 1px solid #000;">
+		<div id=tries style="float: left;">Próby: 0</div></br>
+		<div id=points style="float: left;">Punkty: 0</div></br>
+		<div id=divwidth style="float: left;">Wysokość: <input type=number id=iwidth min=1 max=10 value=3></div></br></br>
+		<div id=divheight style="float: left;">Szerokość: <input type=number id=iheight min=1 max=10 value=4></div></br></br>
+		<input type=button id=start value="Start"></br>
+		<input type=button id=load value="Odśwież"></br>
+	</div>
+	<div class=highscore style="border: 1px solid #000; margin-left: 10px;">
+		-
+	</div>
+	
+	<script>
+	var width = 3; // szerokosc planszy
+	var height = 4; // wysokosc planszy
+	var items = []; // dwuwymiarowa tablica z przedmiotami do odkrycia
+	var uncovered = []; // dwuwymiarowa tablica z odkrytymi elementami
+	var i_uncovered = 0; // ilosc odkrytych elementow w danym momencie
+	var is_game = false; // czy gra jest wlaczona ?
+	var tries = 0; // ilosc prób w danej grze
+	var points = 0; // punkty
+	
+	function placeCards() // rozmiesc karty w pamieci
+	{
+		for (var i=0; i<width; i++) // czyszczenia tablicy
+		{
+			items[i] = [];
+			uncovered[i] = [];
+			for (var j=0; j<height; j++)
+			{
+				items[i].push(0);
+				uncovered[i].push(false);
+			}
+		}
+		
+		var filled = 0; // wypelnione pola
+		var size = width * height; // pole planszy
+		var card = 1; // karta do ustawienia
+		var pair = 0; // ile kart z danej pary zostalo ustawione ?
+		
+		while (filled < size)
+		{
+			var x = getRandomInt(0, width-1);
+			var y = getRandomInt(0, height-1);
+			if (items[x][y] == 0)
+			{
+				items[x][y] = card;
+				filled++;
+				pair++;
+			}
+			if (pair == 2)
+			{
+				pair = 0;
+				card++;
+			}
+		}
+		
+		if (size % 2 != 0) // przy nieparzystym rozmiarze pozostaje jedna luzna karta - zamieniamy ja na jokera
+		{
+			for (var i=0; i<width; i++)
+			{
+				for (var j=0; j<height; j++)
+				{
+					if (items[i][j] == card)
+					{
+						items[i][j] = -2; // joker
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	function placeCardsOnBoard() // rozmiesc karty na ekranie
+	{
+		//$(".container").css("width", 100*width+"px"); // ustaw szerokosc planszy
+		//$(".container").css("height", 100*height+"px"); // ustaw wysokosc planszy
+		$(".container").text(""); // czysc plansze
+		var c_size = 12/height;
+		for (var i=0; i<width; i++)
+		{
+			$(".container").append("<div class=row id=row"+i+"></div>");
+			for (var j=0; j<height; j++)
+			{
+				$(".container #row"+i).append("<div class=\"karta col-xs-"+c_size+"\" id="+i+j+"><div class=\"front\"><img width=100 height=100 src=tyl.jpg></img></div><div class=\"back\"><img width=100 height=100 src="+(items[i][j] != -2 ? items[i][j] : "joker")+".png></img></div></div>");
+			}
+		}
+		
+		$(".container .row .karta").bind("click", click_handler);
+		
+		$(".container .row .karta").flip({
+			trigger: "manual",
+			axis: "x"
+		});
+	}
+	
+	function getRandomInt(min, max) 
+	{
+		return Math.floor(Math.random() * (max - min + 1) + min);
+	}
+	
+	function stop()
+	{
+		is_game = false;
+	}
+	
+	function is_correct()
+	{
+		// znajdz 2 odkryte karty
+		// sprawdz czy wartosci rownaja sie
+		// jesli tak lub jedna z kart to joker to nadpisz na -1
+		// jesli nie to zakryj obie
+		var first_x = -1, first_y = -1;
+		var second_x = -1, second_y = -1;
+		
+		for (var i=0; i<width; i++)
+		{
+			for (var j=0; j<height; j++)
+			{
+				if (uncovered[i][j] && (first_x == -1 || first_y == -1))
+				{
+					uncovered[i][j] = false;
+					first_x = i;
+					first_y = j;
+				}
+				else if (uncovered[i][j] && (second_x == -1 || second_y == -1))
+				{
+					uncovered[i][j] = false;
+					second_x = i;
+					second_y = j;
+					break;
+				}
+			}
+		}
+		
+		if (items[first_x][first_y] == items[second_x][second_y])
+		{
+			items[first_x][first_y] = -1;
+			items[second_x][second_y] = -1;
+			$(".container #row"+first_x+" #"+first_x+first_y).css("visibility", "hidden");
+			$(".container #row"+second_x+" #"+second_x+second_y).css("visibility", "hidden");
+			points++;
+			$(".panel #points").text("Punkty: "+points);
+			if (is_win())
+			{
+				win();
+				return;
+			}
+		}
+		else if (items[first_x][first_y] == -2)
+		{
+			$(".container #row"+first_x+" #"+first_x+first_y).css("visibility", "hidden");
+			items[first_x][first_y] = -1;
+			$(".container $row"+second_x+" #"+second_x+second_y).flip(false);
+			points++;
+			if (is_win())
+			{
+				win();
+				return;
+			}
+		}
+		else if (items[second_x][second_y] == -2)
+		{
+			$(".container #row"+second_x+" #"+second_x+second_y).css("visibility", "hidden");
+			items[second_x][second_y] = -1;
+			$(".container $row"+first_x+" #"+first_x+first_y).flip(false);
+			points++;
+			if (is_win())
+			{
+				win();
+				return;
+			}
+		}
+		else
+		{
+			$(".container #row"+first_x+" #"+first_x+first_y).flip(false);
+			$(".container #row"+second_x+" #"+second_x+second_y).flip(false);
+		}
+		
+		tries++;
+		$(".panel #tries").text("Próby: "+tries);
+	}
+	
+	function loadHighscore()
+	{
+		$.get("http://lamp.ii.us.edu.pl/~ii302459/highscore.php", function(data, status){
+			//alert("Data: " + data + "\nStatus: " + status);
+			if (status != "success")
+			{
+				alert("Problem z komunikacją z serwerem !");
+				return;
+			}
+			
+			if (data == "0")
+			{
+				alert("Problem z bazą danych na serwerze !");
+				return;
+			}
+			
+			if (data == "-1")
+			{
+				$(".highscore").text("Brak wyników. Badź pierwszy!");
+				return;
+			}
+			
+			var arr = JSON.parse(data);
+			var scores = arr.scores;
+			var names = arr.names;
+			$(".highscore").text("");
+			for (var i=1; i<=scores.length; i++) 
+			{
+				//var x = ++i;
+				$(".highscore").append(i+"."+names[i-1]+": "+scores[i-1]+"</br>");
+			}
+		});
+	}
+	
+	function is_win()
+	{
+		for (var i=0; i<width; i++)
+		{
+			for (var j=0; j<height; j++)
+			{
+				if (items[i][j] != -1) return false;
+			}
+		}
+		return true;
+	}
+	
+	function win()
+	{
+		is_game = false;
+		tries++;
+		$(".panel #tries").text("Próby: "+tries);
+		$(".panel #start").val("Start");
+		
+		alert("Koniec!\nTwój wynik: " + points + "\n Podejścia: " + tries);
+		var name = prompt("Podaj swoje imię");
+		while (name == "" || name == null) name = prompt("Podaj swoje imię");
+		
+		$.get("http://lamp.ii.us.edu.pl/~ii302459/add_highscore.php?name="+name+"&score="+tries, function(data, status){
+			if (status != "success")
+			{
+				alert("Problem z zapisem");
+				return;
+			}
+			
+			if (data == "1") 
+			{
+				alert("Zapisany!");
+				loadHighscore();
+			}
+		});
+	}
+	
+	function click_handler()
+	{
+		if (is_game)
+		{
+			// pobierz id kliknietej karty
+			var card_id = $(this).attr("id");
+			var x = card_id[0];
+			var y = card_id[1];
+			var flip = $(this).data("flip-model");
+			if (uncovered[x][y]) return;
+			else if (i_uncovered == 0)
+			{
+				uncovered[x][y] = true;
+				i_uncovered++;
+				$(this).flip(true);
+			}
+			else if (i_uncovered == 1)
+			{
+				i_uncovered = 0;
+				uncovered[x][y] = true;
+				$(this).flip(true);
+				setTimeout(is_correct, 500);
+			}
+		}
+	}
+
+	$(document).ready(function(){
+	
+		placeCards();
+		placeCardsOnBoard();
+		loadHighscore();
+		
+		if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) // skrócenie formularzy na firefoxie dla responsywności
+		{
+			$(".panel #divwidth #iwidth").css("width", "50px");
+			$(".panel #divheight #iheight").css("width", "50px");
+		}
+		
+		$(".container .row .karta").flip({
+			trigger: "manual",
+			axis: "x"
+		});
+		
+		$(".panel #start").click(function(){
+			if (is_game)
+			{
+				stop();
+				$(this).val("Start");
+			}
+			else
+			{
+				width = $(".panel #divwidth #iwidth").val();
+				height = $(".panel #divheight #iheight").val();
+				if (width < 1 || width > 10 || height < 1 || height > 10)
+				{
+					alert("Parametry spoza zakresu !");
+					return;
+				}
+				if (width * height > 20)
+				{
+					alert("Rozmiar planszy jest za duży! Maksymalnie 20 kart!");
+					return;
+				}
+				if (width == 1 && height == 1)
+				{
+					alert("Nie można grać z jedną kartą...");
+					return;
+				}
+				start();
+				$(this).val("Stop");
+			}
+		});
+		
+		$(".panel #load").click(function(){
+			loadHighscore();
+		});
+		
+		function start()
+		{
+			is_game = true;
+			tries = 0;
+			i_uncovered = 0;
+			points = 0;
+			placeCards();
+			placeCardsOnBoard();
+			$(".panel #points").text("Punkty: 0");
+			$(".panel #tries").text("Próby: 0");
+		}
+
+		$(".container .row .karta").bind("click", click_handler);
+
+	});
+	</script>
+</body>
+</html>
